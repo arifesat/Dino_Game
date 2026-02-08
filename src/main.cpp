@@ -113,8 +113,13 @@ const int DINO_CROUCH_HEIGHT = 11;
 const int BIRD_HEIGHT = 9;
 const int BIRD_Y = 40;  // Positioned so standing dino gets hit, crouching passes under
 
+const int BASE_CACTUS_SPEED = 4;
+const int BASE_BIRD_SPEED = 5;
+const int SPEED_INCREASE_THRESHOLD = 30;  // Start increasing speed at this score
+const int SPEED_INCREASE_INTERVAL = 20;   // Increase speed every N points after threshold
+
 unsigned int score = 0;
-// unsigned int highScore = 0;
+unsigned int highScore = 0;
 
 bool isCrouching = false;
 bool isBirdObstacle = false;
@@ -248,9 +253,15 @@ void loop(){
       tRex.isJumping = false;
     }
 
+    // Calculate speed bonus based on score
+    int speedBonus = 0;
+    if(score >= SPEED_INCREASE_THRESHOLD) {
+      speedBonus = 1 + (score - SPEED_INCREASE_THRESHOLD) / SPEED_INCREASE_INTERVAL;
+    }
+
     // Move obstacle
     if(isBirdObstacle) {
-      bird.x -= 5;  // Bird moves slightly faster
+      bird.x -= (BASE_BIRD_SPEED + speedBonus);
       
       // Animate bird wings
       if(currentTime - birdAnimTime >= birdAnimDelay) {
@@ -263,7 +274,7 @@ void loop(){
         spawnObstacle();
       }
     } else {
-      obstacle.x -= 4;
+      obstacle.x -= (BASE_CACTUS_SPEED + speedBonus);
       if(obstacle.x < -10){
         score++;
         spawnObstacle();
@@ -285,14 +296,22 @@ void loop(){
     }
 
     if(collision){
+      if(score > highScore) {
+        highScore = score;
+      }
+
       display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
       display.setCursor(35, 20);
       display.println(F("GAME OVER"));
 
-      display.setCursor(35, 35);
+      display.setCursor(35, 30);
       display.print(F("Score: "));
       display.print(score);
+
+      display.setCursor(35, 42);
+      display.print(F("Best: "));
+      display.print(highScore);
 
       display.display();
 
