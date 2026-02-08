@@ -4,7 +4,7 @@
 #include <Adafruit_SSD1306.h>
 
 #define BUTTON_PIN 4
-#define CROUCH_BUTTON_PIN 2
+#define CROUCH_BUTTON_PIN 16
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
@@ -31,6 +31,44 @@ const unsigned char dino_bitmap [] PROGMEM = {
 0x02, 0x20, 
 0x02, 0x20, 
 0x03, 0x30
+};
+
+const unsigned char dino_right_foot_bitmap [] PROGMEM = {
+0x00, 0x00, 
+0x00, 0x00, 
+0x03, 0xF8, 
+0x03, 0xFC, 
+0x07, 0x0E, 
+0x07, 0x3E, 
+0x07, 0xE0, 
+0x07, 0xF0, 
+0x0F, 0xF8, 
+0x1F, 0xFE, 
+0x1F, 0xF2, 
+0x0F, 0xE0, 
+0x06, 0x20, 
+0x02, 0x20, 
+0x02, 0x20, 
+0x03, 0x00
+};
+
+const unsigned char dino_left_foot_bitmap [] PROGMEM = {
+0x00, 0x00, 
+0x00, 0x00, 
+0x03, 0xF8, 
+0x03, 0xFC, 
+0x07, 0x0E, 
+0x07, 0x3E, 
+0x07, 0xE0, 
+0x07, 0xF0, 
+0x0F, 0xF8, 
+0x1F, 0xFE, 
+0x1F, 0xF4, 
+0x0F, 0xE0, 
+0x02, 0x60, 
+0x02, 0x20, 
+0x02, 0x20, 
+0x00, 0x30
 };
 
 const unsigned char cactus_bitmap [] PROGMEM = {
@@ -62,6 +100,14 @@ const unsigned char dino_crouch_bitmap [] PROGMEM = {
 0x02, 0x20, 
 0x02, 0x20, 
 0x03, 0x30
+};
+
+const unsigned char dino_crouch_right_foot_bitmap [] PROGMEM = {
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE, 0x01, 0xFF, 0x07, 0xFF, 0x0F, 0xFD, 0x1F, 0xF5, 0x1F, 0xF5, 0x0F, 0xE5, 0x06, 0x27, 0x02, 0x20, 0x02, 0x20, 0x03, 0x00
+};
+
+const unsigned char dino_crouch_left_foot_bitmap [] PROGMEM = {
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE, 0x01, 0xFF, 0x07, 0xFF, 0x0F, 0xFD, 0x1F, 0xF5, 0x1F, 0xF5, 0x0F, 0xE5, 0x02, 0x67, 0x02, 0x20, 0x02, 0x20, 0x00, 0x30
 };
 
 const unsigned char bird_up_bitmap [] PROGMEM = {
@@ -110,12 +156,13 @@ const int JUMP_STRENGTH = -8;
 
 const int DINO_STAND_HEIGHT = 14;
 const int DINO_CROUCH_HEIGHT = 11;
-const int BIRD_HEIGHT = 9;
-const int BIRD_Y = 40;  // Positioned so standing dino gets hit, crouching passes under
+const int BIRD_VISUAL_Y = 40;  // Where the bird sprite is drawn
+const int BIRD_COLLISION_Y = 10;  // Top of collision box (catches jumping dino)
+const int BIRD_COLLISION_HEIGHT = 39;  // Collision spans Y=10 to Y=49 (above crouching dino at 49)
 
 const int BASE_CACTUS_SPEED = 4;
 const int BASE_BIRD_SPEED = 5;
-const int SPEED_INCREASE_THRESHOLD = 30;  // Start increasing speed at this score
+const int SPEED_INCREASE_THRESHOLD = 20;  // Start increasing speed at this score
 const int SPEED_INCREASE_INTERVAL = 20;   // Increase speed every N points after threshold
 
 unsigned int score = 0;
@@ -126,6 +173,10 @@ bool isBirdObstacle = false;
 bool birdWingUp = true;
 unsigned long birdAnimTime = 0;
 const int birdAnimDelay = 150;  // Wing flap speed in ms
+
+bool dinoRightFoot = true;  // Toggle between left/right foot
+unsigned long dinoAnimTime = 0;
+const int dinoAnimDelay = 100;  // Foot step speed in ms
 
 typedef struct {
   int x;
@@ -171,13 +222,13 @@ void resetGame(){
 }
 
 void spawnObstacle() {
-  if (score >= 15 && random(0, 100) < 40) {
-    // 40% chance to spawn bird after score 15
+  if (score >= 10 && random(0, 100) < 40) {
+    // 40% chance to spawn bird after score 10
     isBirdObstacle = true;
     bird.x = 128 + random(0, 100);
-    bird.y = BIRD_Y;
+    bird.y = BIRD_COLLISION_Y;
     bird.width = 16;
-    bird.height = BIRD_HEIGHT;
+    bird.height = BIRD_COLLISION_HEIGHT;
   } else {
     // Spawn cactus
     isBirdObstacle = false;
@@ -208,8 +259,8 @@ void setup(){
   obstacle.y = GROUND_Y - obstacle.height;
 
   bird.width = 16;
-  bird.height = BIRD_HEIGHT;
-  bird.y = BIRD_Y;
+  bird.height = BIRD_COLLISION_HEIGHT;
+  bird.y = BIRD_COLLISION_Y;
   bird.x = 128;
 
   resetGame();
@@ -343,19 +394,40 @@ void loop(){
     display.print(F("Score: "));
     display.print(score);
 
-    // Draw dino (standing or crouching)
-    if(isCrouching) {
-      display.drawBitmap(tRex.x, tRex.y, dino_crouch_bitmap, tRex.width, 16, SSD1306_WHITE);
+    // Animate dino feet (only when on ground)
+    if(!tRex.isJumping && currentTime - dinoAnimTime >= dinoAnimDelay) {
+      dinoAnimTime = currentTime;
+      dinoRightFoot = !dinoRightFoot;
+    }
+
+    // Calculate draw Y position (offset by empty rows in bitmap)
+    // Bitmap is 16px tall, but content height varies. Empty rows are at top.
+    int drawY = tRex.y - (16 - tRex.height);
+
+    // Draw dino (standing or crouching, with foot animation)
+    if(tRex.isJumping) {
+      // Static pose when jumping (standing bitmap has 2 empty rows at top)
+      display.drawBitmap(tRex.x, tRex.y - 2, dino_bitmap, tRex.width, 16, SSD1306_WHITE);
+    } else if(isCrouching) {
+      if(dinoRightFoot) {
+        display.drawBitmap(tRex.x, drawY, dino_crouch_right_foot_bitmap, tRex.width, 16, SSD1306_WHITE);
+      } else {
+        display.drawBitmap(tRex.x, drawY, dino_crouch_left_foot_bitmap, tRex.width, 16, SSD1306_WHITE);
+      }
     } else {
-      display.drawBitmap(tRex.x, tRex.y, dino_bitmap, tRex.width, 16, SSD1306_WHITE);
+      if(dinoRightFoot) {
+        display.drawBitmap(tRex.x, drawY, dino_right_foot_bitmap, tRex.width, 16, SSD1306_WHITE);
+      } else {
+        display.drawBitmap(tRex.x, drawY, dino_left_foot_bitmap, tRex.width, 16, SSD1306_WHITE);
+      }
     }
     
     // Draw obstacle (bird or cactus)
     if(isBirdObstacle) {
       if(birdWingUp) {
-        display.drawBitmap(bird.x, bird.y, bird_up_bitmap, bird.width, 16, SSD1306_WHITE);
+        display.drawBitmap(bird.x, BIRD_VISUAL_Y, bird_up_bitmap, bird.width, 16, SSD1306_WHITE);
       } else {
-        display.drawBitmap(bird.x, bird.y, bird_down_bitmap, bird.width, 16, SSD1306_WHITE);
+        display.drawBitmap(bird.x, BIRD_VISUAL_Y, bird_down_bitmap, bird.width, 16, SSD1306_WHITE);
       }
     } else {
       display.drawBitmap(obstacle.x, obstacle.y, cactus_bitmap, obstacle.width, obstacle.height, SSD1306_WHITE);
