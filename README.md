@@ -29,6 +29,8 @@ If using the Arduino IDE, simply copy the contents of `src/main.cpp` into a new 
 - Adafruit GFX Library
 - Adafruit SSD1306
 
+Arduino version has lower framerate due to the device limitations. If you can manage to make it run faster, please open a PR.
+
 ## Tools Used
 
 - **Assets**: 1-bit Image Canvas (https://arifesat.github.io/1bit-Image-Canvas/) to create and edit images.
